@@ -33,7 +33,7 @@ app.add_middleware(
     allow_origins=[x.strip() for x in os.getenv("CORS_ORIGINS", "*").split(",") if x.strip()],
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-API-Key"],
 )
 
 state: dict[str, Any] = {
@@ -85,9 +85,10 @@ def on_startup() -> None:
     threading.Thread(target=_load_model, name="breezy-model-loader", daemon=True).start()
 
 
-def _authorize(authorization: str | None) -> None:
-    if API_KEY and authorization != f"Bearer {API_KEY}":
-        raise HTTPException(status_code=401, detail="Invalid or missing bearer token")
+def _authorize(api_key: str | None) -> None:
+    """Validate Breezy's app key independently of ModelScope gateway auth."""
+    if API_KEY and api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
 def _get_model() -> Llama:
@@ -148,8 +149,8 @@ def health():
 
 
 @app.get("/v1/models")
-def list_models(authorization: str | None = Header(default=None)):
-    _authorize(authorization)
+def list_models(x_api_key: str | None = Header(default=None, alias="X-API-Key")):
+    _authorize(x_api_key)
     return {
         "object": "list",
         "data": [
@@ -166,9 +167,9 @@ def list_models(authorization: str | None = Header(default=None)):
 @app.post("/v1/chat/completions")
 def chat_completions(
     body: dict[str, Any],
-    authorization: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None, alias="X-API-Key"),
 ):
-    _authorize(authorization)
+    _authorize(x_api_key)
     model = _get_model()
     messages = _normalise_messages(body.get("messages"))
 
